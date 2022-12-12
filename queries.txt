@@ -1,0 +1,309 @@
+
+1.Trigger delete
+
+CREATE DEFINER=`root`@`localhost` TRIGGER `canteech_BEFORE_DELETE` BEFORE DELETE ON `canteech` FOR EACH ROW BEGIN
+delete from staff
+where old.Staff_ID = Staff_ID;
+END
+
+2.искать студент с id, который учиться в каких кабинетах
+select s.Student_ID, sec.Section_name, r.Room_ID from students s, rooms r, section sec
+where s.Student_ID in (
+	select Student_ID from enroll
+	where Section_ID in ( 
+		select Section_ID from section
+		where room_ID in (
+			select Room_ID from rooms
+				where Room_ID = r.Room_ID) and Section_ID = sec.Section_ID))
+
+3. посчитать сколько студентов работают в университете
+select count(*) as 'workers students' from canteech
+
+4.вывести на экран тейбл bacheleor_students если есть хотябы один студент у которого GPA больше чем на 3.9
+Select * from bacheleor_students
+where EXISTS
+(select * from bacheleor_students where GPA > 3.9);
+
+5.Вывести на экран студентов у которых как минимум GPA > 3.0 
+Select * from bacheleor_students
+where GPA = ANY
+(select GPA from bacheleor_students where GPA > 3.0);
+
+6.Вывести есть ли студент с GPA = 3
+Select Student_Name, GPA from bacheleor_students
+where GPA = ALL
+(select GPA from bacheleor_students where GPA = 3);
+
+7.Сортировать Продуктов по цене по возрастанию где имя кантина 'belka'
+
+select name, price from products
+where floor_ID = (select floor_ID from food_place
+		where name = 'belka') and price is not NULL
+order by price ASC
+
+8.Выбрать студентов докторантуры у которых GPA больше 3.0 и меньше GPA 3.5
+select *
+from phd_students
+where GPA > 3.0
+EXCEPT
+select *
+from phd_students
+where GPA > 3.5;
+
+9. Выбрать студентов докторантуры у которых GPA между 3.0 и 4.0
+select *
+from phd_students
+where GPA > 3.0
+INTERSECT 
+select *
+from phd_students
+where GPA < 4.0;
+
+10. Выбрать всех студентов отличников из докторантуры, магистратуры и бакалаврията у которых GPA больше 3.5 и сортируем их по ID
+select * from bacheleor_students
+where GPA > 3.5
+Union
+select * from phd_students
+where GPA > 3.5
+UNION
+select * from master_students
+where GPA > 3.5
+order by Student_ID
+
+11.trigger insert уменшает число книг в библиотеке если кто то забрал книгу
+CREATE DEFINER=`root`@`localhost` TRIGGER `book_take_history_AFTER_INSERT` AFTER INSERT ON `book_take_history` FOR EACH ROW BEGIN
+Update library
+set book_amount = book_amount - 1
+where new.Book_ID in ( 
+select Book_ID from(
+	select book_ID from books
+	where floor_ID in (
+		select floor_ID from library
+			)
+		) as t
+	) and floor_ID in (
+		select floor_ID from books
+        where book_ID = new.Book_ID);
+END
+12. trigger delete увеличивает число книг в библионтеке если книгу вернули
+
+CREATE DEFINER=`root`@`localhost` TRIGGER `book_take_history_BEFORE_DELETE` BEFORE DELETE ON `book_take_history` FOR EACH ROW BEGIN
+Update library
+set book_amount = book_amount + 1
+where old.Book_ID in ( 
+select Book_ID from(
+	select book_ID from books
+	where floor_ID in (
+		select floor_ID from library
+			)
+		) as t
+	) and floor_ID in (
+		select floor_ID from books
+        where book_ID = old.Book_ID);
+END
+
+
+
+13.Изменяем тейбл university_db и добавляем туда product_ID column
+
+ALTER TABLE `university_db`.`orders` 
+ADD COLUMN `product_ID` INT NOT NULL AFTER `Stuff_ID`,
+ADD INDEX `pr_id_fk_idx` (`product_ID` ASC) VISIBLE;
+;
+ALTER TABLE `university_db`.`orders` 
+ADD CONSTRAINT `pr_id_fk`
+  FOREIGN KEY (`product_ID`)
+  REFERENCES `university_db`.`products` (`product_ID`)
+  ON DELETE CASCADE
+  ON UPDATE NO ACTION;
+
+14.Считает общию сумму заказа по order_id 
+
+select o.order_ID, sum(p.price * oi.quantity) as total_price
+from products p, orders o, orderitem oi
+where o.order_ID in (  
+	select order_id from orderitem  
+    where product_id in (
+		select product_id from products  
+        where p.price = price)            
+        )
+	and oi.order_ID = o.Order_ID
+    and oi.product_ID = p.product_ID
+group by o.order_ID
+order by total_price
+
+15. создаем view где ищем магистранта который обучает dbms
+
+create view Master_students_that_teaches_dbms as
+select student_name from master_students
+where student_ID in (
+	select student_ID from canteech
+	where staff_id in(
+		select staff_id from subjects_staff
+        where subject_ID in(
+			select subject_ID from subjects)
+            )
+		)
+
+16. в каких кабинетах проходят какие предметы
+
+select section_Id, section_name, r.Room_ID, location as floor, subject_name
+from section s inner join rooms r on
+s.room_id = r.Room_ID inner join subjects sub on
+sub.subject_id = s.Subject_ID
+
+
+17. список свободных кабинетов
+
+select r.room_id as 'free room id', r.location as floor
+from section s
+right join rooms r on r.room_id = s.room_ID
+where s.room_id is null
+
+18. триггер update orderitem при изменении quiantity мы делаем скидку в 15 процентов
+
+CREATE DEFINER=`root`@`localhost` TRIGGER `orderitem_AFTER_UPDATE` AFTER UPDATE ON `orderitem` FOR EACH ROW BEGIN
+if new.quantity > 10
+	then 
+		update products
+        set price = price * 85 / 100
+        where new.product_id = product_id;
+	end if;
+if old.quantity > 10 and new.quantity < 10
+	then
+		update products
+        set price = price * 100 / 85
+        where new.product_id = product_id;
+	end if;
+END
+19. показать магистрантов которые обучают предмету dbms
+
+create view Master_students_that_teaches_dbms as
+select student_name from master_students
+where student_ID in (
+	select student_ID from canteech
+	where staff_id in(
+		select staff_id from subjects_staff
+        where subject_ID in(
+			select subject_ID from subjects
+			where subject_name = 'CSS 206'
+				)
+            )
+		)
+20.показать avg gpa студентов которые взяли предмет dbms
+
+select AVG(GPA) as AverageGPAofStudentsWhoPeekedDBMS from bacheleor_students
+where student_id in (select student_id from enroll
+	where subject_id in (select subject_id from subjects
+		where subject_name = 'CSS 206')
+        )
+
+
+create index fast_index on table Books(Author, Book_name);
+
+
+
+
+
+START TRANSACTION;
+insert into Products (Product_ID, price, name, floor_ID) values (1, 157, 'Speed Stick', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (2, 195, 'SODIUM CHLORIDE', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (3, 129, 'Carimune', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (4, 128, 'Quinapril', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (5, 100, 'CareOne Lansoprazole', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (6, 103, 'levetiracetam', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (7, 122, 'Stemphylium', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (8, 164, 'Virus', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (9, 102, 'Equisetum Formica', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (10, 184, 'Smart Sense Childrens Allergy', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (11, 183, 'LANOXIN', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (12, 133, 'Cymbalta', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (13, 166, 'Carbamazepine', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (14, 187, 'Oxygen', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (15, 146, 'good neighbor pharmacy nasal', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (16, 156, 'ADSOL Red Cell Preservation Solution System in Plastic Container (PL 146 Plastic)', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (17, 170, 'Sterile Alcohol Prep Pad', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (18, 152, 'Givenchy Photo Perfexion Fluid Foundation Broad Spectrum SPF 20 Perfect Cinnamon', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (19, 135, 'Banana Boat Baby Tear Free Sunscreen SPF 60', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (20, 148, 'Gonal-f RFF Redi-ject', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (21, 131, 'Lamotrigine Extended Release', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (22, 138, 'Desipramine Hydrochloride', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (23, 133, 'Ciprofloxacin', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (24, 157, 'ibuprofen pm', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (25, 158, 'Midazolam Hydrochloride', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (26, 102, 'Disopyramide Phosphate', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (27, 144, 'Risperidone', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (28, 108, 'CLARINS Broad Spectrum SPF 15 Everlasting Foundation Tint 104', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (29, 155, 'Namenda', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (30, 148, 'Aminosyn', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (31, 127, 'ATORVASTATIN CALCIUM', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (32, 111, 'Atorvastatin Calcium', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (33, 109, 'Equate Acne Treatment Body Pads', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (34, 173, 'Cedar Elm', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (35, 128, 'Amlodipine Besylate', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (36, 131, 'Throwing and Hitting', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (37, 184, 'Fentanyl', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (38, 153, 'CEFAZOLIN', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (39, 188, 'SEROQUEL', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (40, 158, 'TRAMADOL HYDROCHLORIDE', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (41, 188, 'Enalapril maleate and hydrochlorothiazide', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (42, 194, 'Cozaar', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (43, 102, 'MATTE MOISTURE TINT SUNSCREEN BROAD SPECTRUM SPF 15', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (44, 156, 'Metoclopramide', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (45, 192, 'Warfarin Sodium', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (46, 189, 'Food - Plant Source, Cashew Nut Anacardium occidentalie', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (47, 158, 'Ibuprofen', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (48, 147, 'Gillette Fusion ProSeries', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (49, 123, 'Amitriptyline Hydrochloride', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (50, 182, 'Levothyroxine Sodium', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (51, 115, 'rexall bismuth', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (52, 156, 'Lorazepam', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (53, 124, 'Nortriptyline Hydrochloride', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (54, 112, 'ANAFRANIL', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (55, 162, 'Dologesic', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (56, 183, 'Carvedilol', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (57, 118, 'BlancTis Clinic (10%)', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (58, 176, 'Red Oak', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (59, 154, 'TapouT', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (60, 185, 'TINEACIDE', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (61, 117, 'Stool Softener', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (62, 175, 'Feverall', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (63, 143, 'Lisinopril', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (64, 131, 'Alendronate Sodium', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (65, 187, 'Soothe Night Time', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (66, 102, 'Metformin Hydrochloride', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (67, 197, 'Perfect Choice', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (68, 139, 'Gemcitabine Hydrochloride', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (69, 103, 'Pollens - Weeds and Garden Plants, Plantain, English Plantago lanceolata', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (70, 123, 'Fluticasone Propionate', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (71, 191, 'Rough Pigweed', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (72, 127, 'Ketorolac Tromethamine', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (73, 194, 'SUPERBALANCED', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (74, 183, 'Chlordiazepoxide Hydrochloride', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (75, 103, 'Timeless Placenta Bound', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (76, 179, 'Vyvanse', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (77, 126, 'Hypercalm - Mental Focus', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (78, 166, 'Mirapex', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (79, 133, 'Lipiodol Ultra-Fluide', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (80, 106, 'SHISEIDO THE MAKEUP FOUNDATION', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (81, 166, 'Hamamelis Aesculus', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (82, 123, 'ENGLISH PLANTAIN POLLEN', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (83, 138, 'Anastrozole', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (84, 145, 'CLE DE PEAU BEAUTE RADIANT FLUID FOUNDATION', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (85, 162, 'Skelaxin', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (86, 169, 'Amoxicillin', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (87, 185, 'Jimin Zhuifeng Gao', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (88, 116, 'Lyrica', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (89, 160, 'isosorbide mononitrate', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (90, 190, 'Aspirin', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (91, 184, 'Ipratropium Bromide', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (92, 177, 'Best Choice Cold Sore Treatment', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (93, 103, 'Diclofenac Sodium', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (94, 162, 'PROFESSIONAL WHITENING SYSTEM WHITENING MOUTH WASH', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (95, 167, 'CARE ONE', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (96, 134, 'Loxapine', 3);
+insert into Products (Product_ID, price, name, floor_ID) values (97, 125, 'Glipizide', 1);
+insert into Products (Product_ID, price, name, floor_ID) values (98, 126, 'Valsartan and Hydrochlorothiazide', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (99, 160, 'BERRY BABY LIP BALM RED BERRY', 2);
+insert into Products (Product_ID, price, name, floor_ID) values (100, 136, 'Natures Tears', 2);
+ROLLBACK;
